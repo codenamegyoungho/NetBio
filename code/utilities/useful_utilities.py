@@ -12,7 +12,7 @@ from sklearn.decomposition import PCA
 
 ## useful functions
 
-#
+# 결과적으로 output은 {Reactome_pathway : [ gene1, gene2, gene3, ...]}로 구성된 defaultdict(list)
 def reactome_genes():
 	output = defaultdict(list)
 	output_list = []
