@@ -22,43 +22,43 @@ exec(open('../utilities/ML.py').read())
 
 ## Initialize
 ML = 'LogisticRegression'  #'LogisticRegression'
-fo_dir = '../../result/1_within_study_prediction'
-data_dir = '../../data/ImmunoTherapy'
-biomarker_dir = '../../result/0_data_collection_and_preprocessing'
-patNum_cutoff = 1
-num_genes = 200
-qval_cutoff = 0.01
-predict_proba = False # use probability score as a proxy of drug response
-datasets_to_test = ['Kim'] # ['Gide', 'Liu', 'Kim', 'IMvigor210']
-target_dic = {'Gide':'PD1_CTLA4', 'Liu':'PD1', 'Kim':'PD1', 'IMvigor210':'PD-L1'}
+fo_dir = '../../result/1_within_study_prediction' # 결과 파일이 저장될 디렉토리 
+data_dir = '../../data/ImmunoTherapy' # 면역 치료 데이터가 저장된 디렉토리
+biomarker_dir = '../../result/0_data_collection_and_preprocessing' # 바이오마커 파일이 저장된 디렉토리
+patNum_cutoff = 1 # 분석에 포함할 최소 환자 수 
+num_genes = 200 # 네트워크 propagation을 통해 선택할 최대 유전자 수 
+qval_cutoff = 0.01 # FDR 통계적 유의성 기준
+predict_proba = False # use probability score as a proxy of drug response # 
+datasets_to_test = ['Kim'] # ['Gide', 'Liu', 'Kim', 'IMvigor210'] ' #분석할 데이터셋 목록 
+target_dic = {'Gide':'PD1_CTLA4', 'Liu':'PD1', 'Kim':'PD1', 'IMvigor210':'PD-L1'} # 각 데이터셋의 치료 대상상
 
 
 
 # Reactome pathways
-reactome = reactome_genes()
+reactome = reactome_genes() # {pathway1:[gene1,gene2,gene3]}
 
 # biomarker genes
-bio_df = pd.read_csv('../../data/Marker_summary.txt', sep='\t')
+bio_df = pd.read_csv('../../data/Marker_summary.txt', sep='\t') # 기능적 그룹, 이름, 관련 유전자 목록, 출처등등이 표기 된 데이터 파일 
 
 
 
 ## output
-output = defaultdict(list)
-output_col = []
-proximity_df = defaultdict(list)
+output = defaultdict(list) # 결과 데이터 저장
+output_col = [] 
+proximity_df = defaultdict(list) # proximity 데이터 저장
 
-pred_output = defaultdict(list)
+pred_output = defaultdict(list) # 예측 결과 저장
 pred_output_col = []
 
 
 ## regularization parameter
-regularization_param = defaultdict(list)
+regularization_param = defaultdict(list) # 정규화 파라미터 값 저장
 
 
 
 
-## LOOCV
-for fldr in os.listdir(data_dir):
+## LOOCV --> 데이터셋에서 각 샘플을 한번씩 테스트 데이터로 사용하고 나머지 샘플을 학습 데이터로 사용하는 검증 방법. 
+for fldr in os.listdir(data_dir): # fldr은 개별 데이터셋 
 	test_if_true = 0
 	if ('et_al' in fldr) or ('IMvigor210' == fldr):
 		if (fldr.replace('_et_al','') in datasets_to_test) or (fldr in datasets_to_test):
@@ -67,13 +67,13 @@ for fldr in os.listdir(data_dir):
 			continue
 		print('')
 		print('%s, %s'%(fldr, time.ctime()))
-		study = fldr.split('_')[0]
+		study = fldr.split('_')[0] # 연구명을 추출?
 		testTypes = [] # [ test types ]
 		feature_name_dic = defaultdict(list) # { test_type : [ features ] }
 		
 
 		## load immunotherapy datasets
-		edf, epdf = pd.DataFrame(), pd.DataFrame()
+		edf, epdf = pd.DataFrame(), pd.DataFrame() # edf : 유전자 발현 데이터 DF, epdf : 경로 발현 데이터 DF, responses : 환자의 치료 반응(라벨) 
 		_, edf, epdf, responses = parse_reactomeExpression_and_immunotherapyResponse(study)
 
 
@@ -82,21 +82,21 @@ for fldr in os.listdir(data_dir):
 		if edf.shape[1] < patNum_cutoff:
 			continue
 
-		# scale (gene expression)
+		# scale (gene expression) ## 유전자 발현 정규화 
 		tmp = StandardScaler().fit_transform(edf.T.values[1:])
 		new_tmp = defaultdict(list)
 		new_tmp['genes'] = edf['genes'].tolist()
 		for s_idx, sample in enumerate(edf.columns[1:]):
 			new_tmp[sample] = tmp[s_idx]
-		edf = pd.DataFrame(data=new_tmp, columns=edf.columns)
+		edf = pd.DataFrame(data=new_tmp, columns=edf.columns) # 최종적으로 정규화된 데이터로 edf를 업데이트
 
-		# scale (pathway expression)
+		# scale (pathway expression) ## 경로 발현 정규화 
 		tmp = StandardScaler().fit_transform(epdf.T.values[1:])
 		new_tmp = defaultdict(list)
 		new_tmp['pathway'] = epdf['pathway'].tolist()
 		for s_idx, sample in enumerate(epdf.columns[1:]):
 			new_tmp[sample] = tmp[s_idx]
-		epdf = pd.DataFrame(data=new_tmp, columns=epdf.columns)
+		epdf = pd.DataFrame(data=new_tmp, columns=epdf.columns) # 최종적으로 정규화된 데이터로 epdf를 업데이트
 
 	
 
@@ -110,13 +110,13 @@ for fldr in os.listdir(data_dir):
 
 		## load biomarker genes
 		biomarkers = bio_df['Name'].tolist()
-		bp_dic = defaultdict(list) # { biomarker : [ enriched pathways ] } // enriched functions
+		bp_dic = defaultdict(list) # { biomarker : [ enriched pathways ] } // enriched functions 
 		for biomarker in biomarkers:
 			# biomarker features
 			biomarker_genes = bio_df.loc[bio_df['Name']=='%s'%biomarker,:]['Gene_list'].tolist()[0].split(':')
-			exp_dic[biomarker] = edf.loc[edf['genes'].isin(biomarker_genes),:].T.values[1:]
-			sample_dic[biomarker] = edf.columns[1:]
-			feature_name_dic[biomarker] = edf.loc[edf['genes'].isin(biomarker_genes),:]['genes'].tolist()
+			exp_dic[biomarker] = edf.loc[edf['genes'].isin(biomarker_genes),:].T.values[1:] ## 해당 바이오마커의 유전자 발현 데이터를 저장 
+			sample_dic[biomarker] = edf.columns[1:] # 발현 데이터의 샘플 이름을 저장
+			feature_name_dic[biomarker] = edf.loc[edf['genes'].isin(biomarker_genes),:]['genes'].tolist() # 바이오마커와 연관된 유전자 이름 리스트를 저장
 			testTypes.append(biomarker)
 			
 			
@@ -205,9 +205,9 @@ for fldr in os.listdir(data_dir):
 				regularization_param['C'].append(gcv.best_params_['C'])
 
 				# predictions
-				if predict_proba == False:
-					pred_status = gcv.best_estimator_.predict(X_test)[0]
-				if predict_proba == True:
+				if predict_proba == False: # 테스트 데이터의 예측 라벨만 반환
+					pred_status = gcv.best_estimator_.predict(X_test)[0] 
+				if predict_proba == True: # 테스트 데이터의 예측 확률 반환
 					pred_status = gcv.best_estimator_.predict_proba(X_test)[0][1]
 
 				obs_responses.append(y_test[0])
